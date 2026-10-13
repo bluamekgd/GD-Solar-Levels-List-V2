@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Developer — Solar Levels List</title>
+<style>
+:root {
+  --bg:#f1f3f6; --panel:#fff; --text:#1b2430;
+  --muted:#66728a; --line:#dce1e9; --accent:#b85a0a;
+  --accent-ink:#fff; --hover:#fbf3e8; --sel:#fde9cc;
+}
+[data-theme="dark"] {
+  --bg:#0e131a; --panel:#171f29; --text:#e5eaf1;
+  --muted:#92a0b5; --line:#263140; --accent:#ffb020;
+  --accent-ink:#1f1400; --hover:#232029; --sel:#3a2b12;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font:15px/1.5 system-ui,sans-serif;
+}
+header {
+  padding:16px 20px; border-bottom:1px solid var(--line);
+  display:flex; justify-content:space-between; align-items:center;
+}
+a { color:var(--accent); }
+main { max-width:800px; margin:32px auto; padding:0 16px; }
+h1 { margin-bottom:4px; }
+.muted { color:var(--muted); }
+.panel {
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:8px; padding:20px; margin:18px 0;
+}
+.tabs,.actions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+button {
+  cursor:pointer; border:1px solid var(--line); border-radius:6px;
+  padding:10px 14px; background:var(--panel); color:var(--text);
+  font:inherit;
+}
+button.active,button.primary {
+  background:var(--accent); color:var(--accent-ink);
+  border-color:var(--accent);
+}
+label { display:block; font-weight:600; margin:12px 0; }
+input,textarea {
+  display:block; width:100%; margin-top:5px; padding:10px;
+  border:1px solid var(--line); border-radius:6px;
+  background:var(--bg); color:var(--text); font:inherit;
+}
+textarea {
+  min-height:160px; font:13px/1.5 monospace; resize:vertical;
+}
+.notice {
+  padding:12px; border:1px solid var(--line); border-radius:6px;
+  color:var(--muted); font-size:.9rem;
+}
+[hidden] { display:none !important; }
+@media(max-width:500px) {
+  header { padding:12px; }
+  main { margin-top:20px; }
+  .panel { padding:14px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <strong><a href="./">Solar Levels List</a> / Developer</strong>
+  <button id="theme" type="button">Toggle theme</button>
+</header>
+
+<main>
+  <h1>SQL Generator</h1>
+  <p class="muted">Generate SQL to manage the levels list.</p>
+
+  <p class="notice">
+    This page does not connect to D1. Check the generated SQL before
+    running it in the Cloudflare console.
+  </p>
+
+  <section class="panel">
+    <div class="tabs">
+      <button class="active" data-mode="add">Add level</button>
+      <button data-mode="edit">Edit level</button>
+      <button data-mode="delete">Delete level</button>
+    </div>
+
+    <form id="form">
+      <label>
+        Level ID
+        <input id="id" required placeholder="Geometry Dash level ID">
+      </label>
+
+      <div id="details">
+        <label>Rank
+          <input id="rank" type="number" min="1" step="1" required placeholder="3">
+        </label>
+        <label>Name
+          <input id="name" required placeholder="Level name">
+        </label>
+        <label>Creator
+          <input id="creator" required placeholder="Level creator">
+        </label>
+        <label>Verifier
+          <input id="verifier" required placeholder="Level verifier">
+        </label>
+        <label>Verification video URL
+          <input id="video" type="url" required placeholder="https://...">
+        </label>
+        <label id="victors-label" hidden>Victors JSON
+          <textarea id="victors">[]</textarea>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button class="primary" type="submit">Generate SQL</button>
+        <button type="reset">Clear</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Generated SQL</h2>
+    <textarea id="output" readonly placeholder="Your SQL will appear here..."></textarea>
+    <div class="actions" style="margin-top:12px">
+      <button class="primary" id="copy" type="button">Copy SQL</button>
+      <span class="muted" id="status" role="status"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let mode = "add";
+
+function setMode(next) {
+  mode = next;
+  document.querySelectorAll("[data-mode]").forEach(button => {
+    button.classList.toggle("active", button.dataset.mode === mode);
+  });
+
+  $("details").hidden = mode === "delete";
+  $("victors-label").hidden = mode !== "add";
+
+  ["rank","name","creator","verifier","video"].forEach(id => {
+    $(id).required = mode !== "delete";
+  });
+  $("status").textContent = "";
+}
+
+document.querySelectorAll("[data-mode]").forEach(button => {
+  button.addEventListener("click", () => setMode(button.dataset.mode));
+});
+
+const quote = value => "'" + value.replace(/'/g, "''") + "'";
+
+$("form").addEventListener("submit", event => {
+  event.preventDefault();
+
+  const id = $("id").value.trim();
+
+  if (!id) {
+    $("status").textContent = "Enter a level ID.";
+    return;
+  }
+
+  if (mode === "delete") {
+    $("output").value =
+      `DELETE FROM levels WHERE id = ${quote(id)};`;
+  } else {
+    const rank = $("rank").value;
+    const name = $("name").value.trim();
+    const creator = $("creator").value.trim();
+    const verifier = $("verifier").value.trim();
+    const video = $("video").value.trim();
+
+    if (!/^[1-9]\d*$/.test(rank)) {
+      $("status").textContent = "Rank must be a positive whole number.";
+      return;
+    }
+
+    try {
+      const url = new URL(video);
+      if (!["https:", "http:"].includes(url.protocol)) throw Error();
+    } catch {
+      $("status").textContent = "Enter a valid video URL.";
+      return;
+    }
+
+    const values = [
+      Number(rank), quote(name), quote(creator),
+      quote(verifier), quote(id), quote(video)
+    ];
+
+    if (mode === "add") {
+      let victors;
+      try {
+        const parsed = JSON.parse($("victors").value || "[]");
+        if (!Array.isArray(parsed)) throw Error();
+        victors = JSON.stringify(parsed);
+      } catch {
+        $("status").textContent = "Victors must be a valid JSON list.";
+        return;
+      }
+
+      $("output").value =
+        "INSERT INTO levels (rank, name, creator, verifier, id, video, victors)\n" +
+        `VALUES (${values.join(", ")}, ${quote(victors)});`;
+    } else {
+      $("output").value =
+        "UPDATE levels SET\n" +
+        `  rank = ${values[0]},\n` +
+        `  name = ${values[1]},\n` +
+        `  creator = ${values[2]},\n` +
+        `  verifier = ${values[3]},\n` +
+        `  video = ${values[5]}\n` +
+        `WHERE id = ${values[4]};`;
+    }
+  }
+
+  $("status").textContent = "SQL generated. Review it before running.";
+});
+
+$("form").addEventListener("reset", () => {
+  setTimeout(() => {
+    $("output").value = "";
+    $("victors").value = "[]";
+    $("status").textContent = "";
+  }, 0);
+});
+
+$("copy").addEventListener("click", async () => {
+  if (!$("output").value) {
+    $("status").textContent = "Generate SQL first.";
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText($("output").value);
+    $("status").textContent = "Copied!";
+  } catch {
+    $("output").focus();
+    $("output").select();
+    $("status").textContent = "Press Ctrl+C to copy.";
+  }
+});
+
+$("theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  const next = root.dataset.theme === "dark" ? "light" : "dark";
+  root.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch {}
+});
+
+try {
+  const saved = localStorage.getItem("theme");
+  if (saved) document.documentElement.dataset.theme = saved;
+} catch {}
+</script>
+</body>
+</html>
